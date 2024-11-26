@@ -14,6 +14,7 @@ import {cloneDeep, isEmpty, omit} from 'lodash';
 import uuid from 'uuid';
 import base64url from 'crypto-js/enc-base64url';
 import CryptoJS from 'crypto-js';
+import {interfaceExtends} from '@babel/types';
 
 // Necessary to require lodash this way in order to stub
 // methods in the unit test
@@ -67,17 +68,49 @@ const Authorization = WebexPlugin.extend({
 
   namespace: 'Credentials',
 
+  /**
+   * EventEmitter for authorization events
+   * @instance
+   * @memberof AuthorizationBrowserFirstParty
+   * @type {EventEmitter}
+   * @public
+   */
+  eventEmitter: new EventEmitter(),
 
   /**
-   * Stores the interval ID for QR code polling
+   * Stores the timer ID for QR code polling
    * @instance
    * @memberof AuthorizationBrowserFirstParty
    * @type {?number}
    * @private
    */
-  pollingRequest: null,
+  pollingTimer: null,
+  /**
+   * Stores the expiration timer ID for QR code polling
+   * @instance
+   * @memberof AuthorizationBrowserFirstParty
+   * @type {?number}
+   * @private
+   */
+  pollingExpirationTimer: null,
 
-  eventEmitter: new EventEmitter(),
+  /**
+   * Monotonically increasing id to identify the current polling request
+   * @instance
+   * @memberof AuthorizationBrowserFirstParty
+   * @type {number}
+   * @private
+   */
+  pollingId: 0,
+
+  /**
+   * Identifier for the current polling request
+   * @instance
+   * @memberof AuthorizationBrowserFirstParty
+   * @type {?number}
+   * @private
+   */
+  currentPollingId: null,
 
   /**
    * Initializer
@@ -260,7 +293,7 @@ const Authorization = WebexPlugin.extend({
    * @emits #qRCodeLogin
    */
   initQRCodeLogin() {
-    if (this.pollingRequest) {
+    if (this.pollingTimer) {
       this.eventEmitter.emit('qRCodeLogin', {
         eventType: 'getUserCodeFailure',
         data: {message: 'There is already a polling request'},
@@ -291,7 +324,7 @@ const Authorization = WebexPlugin.extend({
             userCode: user_code,
             verificationUri: verification_uri,
             verificationUriComplete: verification_uri_complete,
-          }
+          },
         });
         // if device authorization success, then start to poll server to check whether the user has completed authorization
         this._startQRCodePolling(res.body);
@@ -320,7 +353,7 @@ const Authorization = WebexPlugin.extend({
       return;
     }
 
-    if (this.pollingRequest) {
+    if (this.pollingTimer) {
       this.eventEmitter.emit('qRCodeLogin', {
         eventType: 'authorizationFailure',
         data: {message: 'There is already a polling request'},
@@ -328,15 +361,21 @@ const Authorization = WebexPlugin.extend({
       return;
     }
 
-    const {device_code: deviceCode, interval = 2, expires_in: expiresIn = 300} = options;
+    const {device_code: deviceCode, expires_in: expiresIn = 300} = options;
+    let interval = options.interval ?? 2;
 
-    let attempts = 0;
-    const maxAttempts = expiresIn / interval;
+    this.pollingExpirationTimer = setTimeout(() => {
+      this.cancelQRCodePolling(false);
+      this.eventEmitter.emit('qRCodeLogin', {
+        eventType: 'authorizationFailure',
+        data: {message: 'Authorization timed out'},
+      });
+    }, expiresIn * 1000);
 
-    this.pollingRequest = setInterval(() => {
-      attempts += 1;
+    const polling = () => {
+      this.pollingId += 1;
+      this.currentPollingId = this.pollingId;
 
-      const currentAttempts = attempts;
       this.webex
         .request({
           method: 'POST',
@@ -354,7 +393,8 @@ const Authorization = WebexPlugin.extend({
           },
         })
         .then((res) => {
-          if (this.pollingRequest === null) return;
+          // if the pollingId has changed, it means that the polling request has been canceled
+          if (this.currentPollingId !== this.pollingId) return;
 
           this.eventEmitter.emit('qRCodeLogin', {
             eventType: 'authorizationSuccess',
@@ -363,23 +403,24 @@ const Authorization = WebexPlugin.extend({
           this.cancelQRCodePolling();
         })
         .catch((res) => {
-          if (this.pollingRequest === null) return;
+          // if the pollingId has changed, it means that the polling request has been canceled
+          if (this.currentPollingId !== this.pollingId) return;
 
-          if (currentAttempts >= maxAttempts) {
-            this.eventEmitter.emit('qRCodeLogin', {
-              eventType: 'authorizationFailure',
-              data: {message: 'Authorization timed out'}
-            });
-            this.cancelQRCodePolling();
+          // When server sends 400 status code with message 'slow_down', it means that last request happened too soon.
+          // So, skip one interval and then poll again.
+          if (res.statusCode === 400 && res.body.message === 'slow_down') {
+            schedulePolling(interval * 2);
             return;
           }
+
           // if the statusCode is 428 which means that the authorization request is still pending
           // as the end user hasn't yet completed the user-interaction steps. So keep polling.
           if (res.statusCode === 428) {
             this.eventEmitter.emit('qRCodeLogin', {
               eventType: 'authorizationPending',
-              data: res.body
+              data: res.body,
             });
+            schedulePolling(interval);
             return;
           }
 
@@ -387,10 +428,15 @@ const Authorization = WebexPlugin.extend({
 
           this.eventEmitter.emit('qRCodeLogin', {
             eventType: 'authorizationFailure',
-            data: res.body
+            data: res.body,
           });
         });
-    }, interval * 1000);
+    };
+
+    const schedulePolling = (interval) =>
+      (this.pollingTimer = setTimeout(polling, interval * 1000));
+
+    schedulePolling(interval);
   },
 
   /**
@@ -399,14 +445,19 @@ const Authorization = WebexPlugin.extend({
    * @memberof AuthorizationBrowserFirstParty
    * @returns {void}
    */
-  cancelQRCodePolling() {
-    if (this.pollingRequest) {
-      clearInterval(this.pollingRequest);
+  cancelQRCodePolling(withCancelEvent = true) {
+    if (this.pollingTimer && withCancelEvent) {
       this.eventEmitter.emit('qRCodeLogin', {
         eventType: 'pollingCanceled',
       });
-      this.pollingRequest = null;
     }
+
+    this.currentPollingId = null;
+
+    clearTimeout(this.pollingExpirationTimer);
+    this.pollingExpirationTimer = null;
+    clearTimeout(this.pollingTimer);
+    this.pollingTimer = null;
   },
 
   /**

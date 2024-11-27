@@ -14,7 +14,6 @@ import {cloneDeep, isEmpty, omit} from 'lodash';
 import uuid from 'uuid';
 import base64url from 'crypto-js/enc-base64url';
 import CryptoJS from 'crypto-js';
-import {interfaceExtends} from '@babel/types';
 
 // Necessary to require lodash this way in order to stub
 // methods in the unit test

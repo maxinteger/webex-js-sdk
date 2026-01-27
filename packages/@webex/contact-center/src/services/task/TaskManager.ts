@@ -289,14 +289,8 @@ export default class TaskManager extends EventEmitter {
             if (task) {
               task = this.updateTaskData(task, {
                 ...payload.data,
-                wrapUpRequired:
-                  payload.data.interaction.state !== 'new' &&
-                  !isSecondaryEpDnAgent(payload.data.interaction),
+                wrapUpRequired: payload.data.agentsPendingWrapUp?.includes(this.agentId) || false,
               });
-
-              if (task.data.interaction.state === 'wrapUp') {
-                task = this.updateTaskData(task, {...payload.data, wrapUpRequired: false});
-              }
 
               // Handle cleanup based on whether task should be deleted
               this.handleTaskCleanup(task);
@@ -673,10 +667,6 @@ export default class TaskManager extends EventEmitter {
     // For non-OUTDIAL: remove if state is 'new'
     // Always remove if secondary EpDn agent
     if ((isNew && !(isOutdial && needsWrapUp)) || isSecondaryEpDnAgent(task.data.interaction)) {
-      this.removeTaskFromCollection(task);
-    }
-
-    if (task.data.interaction.state === 'wrapUp') {
       this.removeTaskFromCollection(task);
     }
   }

@@ -9254,7 +9254,10 @@ describe('plugin-meetings', () => {
 
             // check that the right things were called by the callback
             assert.calledOnceWithExactly(meeting.waitForRemoteSDPAnswer);
-            assert.calledOnceWithExactly(meeting.mediaProperties.waitForMediaConnectionConnected);
+            assert.calledOnceWithExactly(
+              meeting.mediaProperties.waitForMediaConnectionConnected,
+              meeting.correlationId
+            );
           });
         });
 

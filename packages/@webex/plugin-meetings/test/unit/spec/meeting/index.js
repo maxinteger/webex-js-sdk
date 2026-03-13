@@ -11887,6 +11887,7 @@ describe('plugin-meetings', () => {
         let canUnsetDisallowUnmuteSpy;
         let canUserRaiseHandSpy;
         let bothLeaveAndEndMeetingAvailableSpy;
+        let requireHostEndMeetingBeforeLeaveSpy;
         let canUserLowerAllHandsSpy;
         let canUserLowerSomeoneElsesHandSpy;
         let waitingForOthersToJoinSpy;
@@ -11919,6 +11920,10 @@ describe('plugin-meetings', () => {
           bothLeaveAndEndMeetingAvailableSpy = sinon.spy(
             MeetingUtil,
             'bothLeaveAndEndMeetingAvailable'
+          );
+          requireHostEndMeetingBeforeLeaveSpy = sinon.spy(
+            MeetingUtil,
+            'requireHostEndMeetingBeforeLeave'
           );
           canUserLowerSomeoneElsesHandSpy = sinon.spy(MeetingUtil, 'canUserLowerSomeoneElsesHand');
           waitingForOthersToJoinSpy = sinon.spy(MeetingUtil, 'waitingForOthersToJoin');
@@ -12491,6 +12496,7 @@ describe('plugin-meetings', () => {
           assert.calledWith(canUnsetDisallowUnmuteSpy, userDisplayHints);
           assert.calledWith(canUserRaiseHandSpy, userDisplayHints);
           assert.calledWith(bothLeaveAndEndMeetingAvailableSpy, userDisplayHints);
+          assert.calledWith(requireHostEndMeetingBeforeLeaveSpy, userDisplayHints);
           assert.calledWith(canUserLowerAllHandsSpy, userDisplayHints);
           assert.calledWith(canUserLowerSomeoneElsesHandSpy, userDisplayHints);
           assert.calledWith(waitingForOthersToJoinSpy, userDisplayHints);

@@ -991,6 +991,7 @@ describe('internal-plugin-metrics', () => {
     });
 
     it('calculates getClientJMT correctly', () => {
+      cdl.saveLatency('internal.click.to.interstitial.for.client.jmt', 5);
       cdl.saveTimestamp({
         key: 'internal.client.interstitial-window.click.joinbutton',
         value: 2,
@@ -999,19 +1000,25 @@ describe('internal-plugin-metrics', () => {
         key: 'client.locus.join.request',
         value: 6,
       });
+      // clickToInterstitialForClientJmt (5) + interstitialJoinToLocusJoinRequest (6 - 2 = 4) = 9
+      assert.deepEqual(cdl.getClientJMT(), 9);
+    });
+
+    it('returns undefined for getClientJMT when clickToInterstitialForClientJmt is missing', () => {
       cdl.saveTimestamp({
-        key: 'client.locus.join.response',
-        value: 8,
+        key: 'internal.client.interstitial-window.click.joinbutton',
+        value: 2,
       });
       cdl.saveTimestamp({
-        key: 'client.ice.start',
-        value: 10,
+        key: 'client.locus.join.request',
+        value: 6,
       });
-      cdl.saveTimestamp({
-        key: 'client.ice.end',
-        value: 11,
-      });
-      assert.deepEqual(cdl.getClientJMT(), 3);
+      assert.deepEqual(cdl.getClientJMT(), undefined);
+    });
+
+    it('returns undefined for getClientJMT when interstitialJoinToLocusJoinRequest is missing', () => {
+      cdl.saveLatency('internal.click.to.interstitial.for.client.jmt', 5);
+      assert.deepEqual(cdl.getClientJMT(), undefined);
     });
 
     it('calculates getAudioJoinRespRxStart correctly', () => {

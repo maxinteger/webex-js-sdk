@@ -790,7 +790,7 @@ export default class Meeting extends StatelessWebexPlugin {
   private deferSDPAnswer?: Defer; // used for waiting for a response
   private sdpResponseTimer?: ReturnType<typeof setTimeout>;
   private hasMediaConnectionConnectedAtLeastOnce: boolean;
-  private joinWithMediaRetryInfo?: {isRetry: boolean; prevJoinResponse?: any};
+  private joinWithMediaRetryInfo?: {isRetry: boolean; prevJoinResponse?: any; prevError?: Error};
   private connectionStateHandler?: ConnectionStateHandler;
   private iceCandidateErrors: Map<string, number>;
   private iceCandidatesCount: number;
@@ -5460,7 +5460,7 @@ export default class Meeting extends StatelessWebexPlugin {
     } = {}
   ) {
     const {mediaOptions, joinOptions = {}} = options;
-    const {isRetry, prevJoinResponse} = this.joinWithMediaRetryInfo;
+    const {isRetry, prevJoinResponse, prevError} = this.joinWithMediaRetryInfo;
 
     if (!mediaOptions?.allowMediaInLobby) {
       return Promise.reject(
@@ -5486,12 +5486,14 @@ export default class Meeting extends StatelessWebexPlugin {
       );
     }
 
+    const shouldJoin = !joinResponse || (prevError && prevError instanceof UserNotJoinedError);
+
     try {
       let turnServerInfo;
       let turnDiscoverySkippedReason;
       let forceTurnDiscovery = false;
 
-      if (!joinResponse) {
+      if (shouldJoin) {
         // This is the 1st attempt or a retry after join request failed -> we need to do a join with TURN discovery
 
         const turnDiscoveryRequest = await this.roap.generateTurnDiscoveryRequestMessage(
@@ -5608,11 +5610,18 @@ export default class Meeting extends StatelessWebexPlugin {
         LoggerProxy.logger.warn('Meeting:index#joinWithMedia --> retrying call to joinWithMedia');
         this.joinWithMediaRetryInfo.isRetry = true;
         this.joinWithMediaRetryInfo.prevJoinResponse = joinResponse;
+        this.joinWithMediaRetryInfo.prevError = error;
 
         return this.joinWithMedia(options);
       }
 
+      const previousError = this.joinWithMediaRetryInfo?.prevError;
+
       this.joinWithMediaRetryInfo = {isRetry: false, prevJoinResponse: undefined};
+
+      if (isRetry && previousError) {
+        error.message = `First attempt error: ${previousError.message}\n\nSecond attempt error: ${error.message}`;
+      }
 
       throw error;
     }

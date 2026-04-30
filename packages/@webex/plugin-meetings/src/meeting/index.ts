@@ -5460,7 +5460,7 @@ export default class Meeting extends StatelessWebexPlugin {
     } = {}
   ) {
     const {mediaOptions, joinOptions = {}} = options;
-    const {isRetry, prevJoinResponse, prevError} = this.joinWithMediaRetryInfo;
+    const {isRetry, prevJoinResponse} = this.joinWithMediaRetryInfo;
 
     if (!mediaOptions?.allowMediaInLobby) {
       return Promise.reject(
@@ -5486,7 +5486,7 @@ export default class Meeting extends StatelessWebexPlugin {
       );
     }
 
-    const shouldJoin = !joinResponse || (prevError && prevError instanceof UserNotJoinedError);
+    const shouldJoin = !joinResponse || joinResponse instanceof Error;
 
     try {
       let turnServerInfo;
@@ -5615,15 +5615,15 @@ export default class Meeting extends StatelessWebexPlugin {
         return this.joinWithMedia(options);
       }
 
-      const previousError = this.joinWithMediaRetryInfo?.prevError;
+      const {prevError} = this.joinWithMediaRetryInfo;
 
-      this.joinWithMediaRetryInfo = {isRetry: false, prevJoinResponse: undefined};
+      this.joinWithMediaRetryInfo = {
+        isRetry: false,
+        prevJoinResponse: undefined,
+        prevError: undefined,
+      };
 
-      if (isRetry && previousError) {
-        error.message = `First attempt error: ${previousError.message}\n\nSecond attempt error: ${error.message}`;
-      }
-
-      throw error;
+      throw prevError ?? error;
     }
   }
 
